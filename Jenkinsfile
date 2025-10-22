@@ -42,6 +42,7 @@ spec:
                     script {
                         echo "🔄 Vérification des changements Git..."
                         echo "⏰ Poll SCM configuré: */5 * * * * (toutes les 5 minutes)"
+                        echo "🚀 CI/CD AUTOMATIQUE - Déclenché par modification Jenkinsfile"
                         
                         if (!fileExists('Dockerfile')) {
                             error "❌ Dockerfile non trouvé!"
@@ -52,6 +53,7 @@ spec:
                         
                         echo "📝 Commit: ${commitHash}"
                         echo "🐳 Dockerfile: ✅ Présent"
+                        echo "✅ Modification test CI/CD - Aucun impact fonctionnel"
                     }
                 }
             }
@@ -92,6 +94,7 @@ spec:
                 container('kubectl') {
                     script {
                         echo "📄 Génération des manifests Kubernetes..."
+                        echo "📋 Inclut: PV, PVC, Deployment, Service NodePort"
                         sh 'mkdir -p k8s-auto'
                         
                         // 1. Persistent Volume
@@ -213,6 +216,7 @@ spec:
                 container('kubectl') {
                     script {
                         echo "🚀 Déploiement sur Kubernetes..."
+                        echo "📦 Déploiement AUTOMATIQUE déclenché par CI/CD"
                         
                         // Créer le namespace
                         sh "kubectl create namespace ${KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true"
@@ -229,6 +233,7 @@ spec:
                         sh "kubectl rollout status deployment/${APP_NAME} -n ${KUBE_NAMESPACE} --timeout=300s"
                         
                         echo "✅ Déploiement terminé avec succès"
+                        echo "🎉 CI/CD AUTOMATIQUE FONCTIONNEL !"
                     }
                 }
             }
@@ -263,6 +268,7 @@ spec:
                 def nodeIP = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
                 echo "🌐 URL: http://${nodeIP}:${NODE_PORT}"
                 echo "💾 Storage: PV et PVC configurés pour la persistance"
+                echo "🚀 CI/CD AUTOMATIQUE: OPÉRATIONNEL !"
             }
         }
         failure {
