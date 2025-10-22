@@ -22,7 +22,7 @@ spec:
   volumes:
   - name: docker-sock
     hostPath:
-      path: /var/run/docker.sock
+      path: "/var/run/docker.sock"
 """
         }
     }
@@ -40,6 +40,9 @@ spec:
             steps {
                 container('docker') {
                     script {
+                        // RÉPARATION : Configurer Git safe.directory
+                        sh 'git config --global --add safe.directory /home/jenkins/agent/workspace/opengrc'
+                        
                         echo "🔄 Vérification des changements Git..."
                         echo "⏰ Poll SCM configuré: */5 * * * * (toutes les 5 minutes)"
                         echo "🚀 CI/CD AUTOMATIQUE - Déclenché par modification Jenkinsfile"
@@ -251,6 +254,33 @@ spec:
                         kubectl get pvc -n ${KUBE_NAMESPACE}
                         echo "=== PODS ==="
                         kubectl get pods -n ${KUBE_NAMESPACE}
+                        echo "=== SERVICES ==="
+                        kubectl get svc -n ${KUBE_NAMESPACE}
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                container('kubectl') {
+                    script {
+                        echo "🏥 Health Check de l'application..."
+                        sh """
+                        # Attendre que l'application soit prête
+                        sleep 30
+                        
+                        # Récupérer l'IP du node
+                        NODE_IP=\$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+                        echo "🌐 Test de l'application sur: http://\${NODE_IP}:${NODE_PORT}"
+                        
+                        # Test de connexion
+                        if curl -f http://\${NODE_IP}:${NODE_PORT} > /dev/null 2>&1; then
+                            echo "✅ Application accessible et responsive"
+                        else
+                            echo "⚠️  Application déployée mais non accessible - vérifiez les logs"
+                        fi
                         """
                     }
                 }
@@ -269,10 +299,32 @@ spec:
                 echo "🌐 URL: http://${nodeIP}:${NODE_PORT}"
                 echo "💾 Storage: PV et PVC configurés pour la persistance"
                 echo "🚀 CI/CD AUTOMATIQUE: OPÉRATIONNEL !"
+                
+                // Afficher le résumé final
+                sh """
+                echo ""
+                echo "📊 RÉSUMÉ DU DÉPLOIEMENT:"
+                echo "=========================="
+                kubectl get all -n ${KUBE_NAMESPACE}
+                echo ""
+                kubectl get pv,pvc -n ${KUBE_NAMESPACE}
+                """
             }
         }
         failure {
             echo "❌ ÉCHEC: Vérifiez les logs"
+            script {
+                sh """
+                echo "=== DERNIERS LOGS ==="
+                kubectl logs -n ${KUBE_NAMESPACE} -l app=${APP_NAME} --tail=20 2>/dev/null || echo "Aucun pod trouvé"
+                
+                echo "=== ÉVÉNEMENTS RÉCENTS ==="
+                kubectl get events -n ${KUBE_NAMESPACE} --sort-by=.lastTimestamp 2>/dev/null | tail -10 || echo "Aucun événement"
+                
+                echo "=== DESCRIPTION DES PODS ==="
+                kubectl describe pods -n ${KUBE_NAMESPACE} -l app=${APP_NAME} 2>/dev/null || echo "Aucun pod à décrire"
+                """
+            }
         }
     }
 }
