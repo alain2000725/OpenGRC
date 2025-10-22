@@ -41,7 +41,7 @@ spec:
                 container('docker') {
                     script {
                         echo "🔄 Vérification des changements Git..."
-                        echo "✅ Test modification - Pipeline CI/CD OpenGRC"
+                        echo "⏰ Poll SCM configuré: */5 * * * * (toutes les 5 minutes)"
                         
                         if (!fileExists('Dockerfile')) {
                             error "❌ Dockerfile non trouvé!"
@@ -52,7 +52,6 @@ spec:
                         
                         echo "📝 Commit: ${commitHash}"
                         echo "🐳 Dockerfile: ✅ Présent"
-                        echo "⏰ Déclenchement auto: Toutes les 5 minutes"
                     }
                 }
             }
@@ -95,6 +94,43 @@ spec:
                         echo "📄 Génération des manifests Kubernetes..."
                         sh 'mkdir -p k8s-auto'
                         
+                        // 1. Persistent Volume
+                        writeFile file: 'k8s-auto/pv.yaml', text: """
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ${APP_NAME}-pv
+  labels:
+    type: local
+    app: ${APP_NAME}
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/data/${APP_NAME}"
+  persistentVolumeReclaimPolicy: Retain
+"""
+                        
+                        // 2. Persistent Volume Claim
+                        writeFile file: 'k8s-auto/pvc.yaml', text: """
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${APP_NAME}-pvc
+  namespace: ${KUBE_NAMESPACE}
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+"""
+                        
+                        // 3. Deployment avec volume
                         writeFile file: 'k8s-auto/deployment.yaml', text: """
 apiVersion: apps/v1
 kind: Deployment
@@ -102,7 +138,7 @@ metadata:
   name: ${APP_NAME}
   namespace: ${KUBE_NAMESPACE}
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: ${APP_NAME}
@@ -116,11 +152,42 @@ spec:
         image: ${DOCKER_IMAGE}:${env.DOCKER_TAG}
         ports:
         - containerPort: ${APP_PORT}
+        volumeMounts:
+        - name: storage
+          mountPath: /var/www/html/storage
+        - name: storage
+          mountPath: /var/www/html/bootstrap/cache
         env:
         - name: APP_ENV
           value: "production"
+        - name: APP_DEBUG
+          value: "false"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: ${APP_PORT}
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: ${APP_PORT}
+          initialDelaySeconds: 30
+          periodSeconds: 5
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: ${APP_NAME}-pvc
 """
                         
+                        // 4. Service NodePort
                         writeFile file: 'k8s-auto/service.yaml', text: """
 apiVersion: v1
 kind: Service
@@ -146,12 +213,40 @@ spec:
                 container('kubectl') {
                     script {
                         echo "🚀 Déploiement sur Kubernetes..."
+                        
+                        // Créer le namespace
                         sh "kubectl create namespace ${KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true"
-                        sh "kubectl apply -f k8s-auto/ -n ${KUBE_NAMESPACE}"
+                        
+                        // Appliquer PV d'abord (cluster scope)
+                        sh "kubectl apply -f k8s-auto/pv.yaml"
+                        
+                        // Puis le reste dans le namespace
+                        sh "kubectl apply -f k8s-auto/pvc.yaml -n ${KUBE_NAMESPACE}"
+                        sh "kubectl apply -f k8s-auto/deployment.yaml -n ${KUBE_NAMESPACE}"
+                        sh "kubectl apply -f k8s-auto/service.yaml -n ${KUBE_NAMESPACE}"
+                        
+                        // Attendre le déploiement
                         sh "kubectl rollout status deployment/${APP_NAME} -n ${KUBE_NAMESPACE} --timeout=300s"
                         
-                        echo "🎉 Déploiement réussi!"
-                        echo "🌐 Votre application sera accessible sur: http://<NODE_IP>:${NODE_PORT}"
+                        echo "✅ Déploiement terminé avec succès"
+                    }
+                }
+            }
+        }
+        
+        stage('Verify Storage') {
+            steps {
+                container('kubectl') {
+                    script {
+                        echo "🔍 Vérification du storage..."
+                        sh """
+                        echo "=== PV ==="
+                        kubectl get pv
+                        echo "=== PVC ==="
+                        kubectl get pvc -n ${KUBE_NAMESPACE}
+                        echo "=== PODS ==="
+                        kubectl get pods -n ${KUBE_NAMESPACE}
+                        """
                     }
                 }
             }
@@ -163,11 +258,15 @@ spec:
             echo "🏁 Pipeline execution terminée - Build: ${BUILD_NUMBER}"
         }
         success {
-            echo "✅ SUCCÈS: Application déployée avec succès!"
-            sh "kubectl get svc -n ${KUBE_NAMESPACE}"
+            echo "🎉 SUCCÈS: Application déployée avec storage persistant!"
+            script {
+                def nodeIP = sh(script: "kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type==\"InternalIP\")].address}'", returnStdout: true).trim()
+                echo "🌐 URL: http://${nodeIP}:${NODE_PORT}"
+                echo "💾 Storage: PV et PVC configurés pour la persistance"
+            }
         }
         failure {
-            echo "❌ ÉCHEC: Vérifiez les logs pour diagnostiquer le problème"
+            echo "❌ ÉCHEC: Vérifiez les logs"
         }
     }
 }
