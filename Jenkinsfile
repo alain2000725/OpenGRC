@@ -32,7 +32,7 @@ spec:
         DOCKER_IMAGE = "yvesmayombo/opengrc"
         KUBE_NAMESPACE = "opengrc"
         APP_NAME = "opengrc"
-        APP_PORT = "8080"  // Votre app écoute sur 8080 selon le Dockerfile
+        APP_PORT = "8080"
         NODE_PORT = "30080"
     }
     stages {
@@ -41,6 +41,7 @@ spec:
                 container('docker') {
                     script {
                         echo "🔄 Vérification des changements Git..."
+                        echo "✅ Test modification - Pipeline CI/CD OpenGRC"
                         
                         if (!fileExists('Dockerfile')) {
                             error "❌ Dockerfile non trouvé!"
@@ -51,6 +52,7 @@ spec:
                         
                         echo "📝 Commit: ${commitHash}"
                         echo "🐳 Dockerfile: ✅ Présent"
+                        echo "⏰ Déclenchement auto: Toutes les 5 minutes"
                     }
                 }
             }
@@ -100,7 +102,7 @@ metadata:
   name: ${APP_NAME}
   namespace: ${KUBE_NAMESPACE}
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: ${APP_NAME}
@@ -147,9 +149,25 @@ spec:
                         sh "kubectl create namespace ${KUBE_NAMESPACE} --dry-run=client -o yaml | kubectl apply -f - || true"
                         sh "kubectl apply -f k8s-auto/ -n ${KUBE_NAMESPACE}"
                         sh "kubectl rollout status deployment/${APP_NAME} -n ${KUBE_NAMESPACE} --timeout=300s"
+                        
+                        echo "🎉 Déploiement réussi!"
+                        echo "🌐 Votre application sera accessible sur: http://<NODE_IP>:${NODE_PORT}"
                     }
                 }
             }
+        }
+    }
+    
+    post {
+        always {
+            echo "🏁 Pipeline execution terminée - Build: ${BUILD_NUMBER}"
+        }
+        success {
+            echo "✅ SUCCÈS: Application déployée avec succès!"
+            sh "kubectl get svc -n ${KUBE_NAMESPACE}"
+        }
+        failure {
+            echo "❌ ÉCHEC: Vérifiez les logs pour diagnostiquer le problème"
         }
     }
 }
