@@ -12,6 +12,13 @@ spec:
     image: docker:latest
     command: ['cat']
     tty: true
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
     volumeMounts:
     - name: docker-sock
       mountPath: /var/run/docker.sock
@@ -19,6 +26,13 @@ spec:
     image: alpine/k8s:1.30.0
     command: ['cat']
     tty: true
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
   volumes:
   - name: docker-sock
     hostPath:
