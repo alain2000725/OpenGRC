@@ -98,10 +98,13 @@ spec:
                     script {
                         echo "📄 Génération des manifests Kubernetes..."
                         echo "📋 Inclut: PV, PVC, Deployment, Service NodePort"
-                        sh 'mkdir -p k8s-auto'
                         
-                        // 1. Persistent Volume
-                        writeFile file: 'k8s-auto/pv.yaml', text: """
+                        // Nettoyer et créer le dossier
+                        sh 'rm -rf k8s-auto && mkdir -p k8s-auto'
+                        
+                        // Générer tous les fichiers avec cat/heredoc pour éviter les problèmes de permissions
+                        sh """
+cat > k8s-auto/pv.yaml << 'EOF'
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -118,10 +121,9 @@ spec:
   hostPath:
     path: "/data/${APP_NAME}"
   persistentVolumeReclaimPolicy: Retain
-"""
-                        
-                        // 2. Persistent Volume Claim
-                        writeFile file: 'k8s-auto/pvc.yaml', text: """
+EOF
+
+cat > k8s-auto/pvc.yaml << 'EOF'
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -134,10 +136,9 @@ spec:
   resources:
     requests:
       storage: 5Gi
-"""
-                        
-                        // 3. Deployment avec volume
-                        writeFile file: 'k8s-auto/deployment.yaml', text: """
+EOF
+
+cat > k8s-auto/deployment.yaml << 'EOF'
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -191,10 +192,9 @@ spec:
       - name: storage
         persistentVolumeClaim:
           claimName: ${APP_NAME}-pvc
-"""
-                        
-                        // 4. Service NodePort
-                        writeFile file: 'k8s-auto/service.yaml', text: """
+EOF
+
+cat > k8s-auto/service.yaml << 'EOF'
 apiVersion: v1
 kind: Service
 metadata:
@@ -208,7 +208,12 @@ spec:
     - port: ${APP_PORT}
       targetPort: ${APP_PORT}
       nodePort: ${NODE_PORT}
+EOF
 """
+                        
+                        // Vérifier que les fichiers sont bien créés
+                        sh 'ls -la k8s-auto/'
+                        echo "✅ Manifests Kubernetes générés avec succès"
                     }
                 }
             }
