@@ -74,19 +74,25 @@ WORKDIR /var/www/html
 
 COPY composer.json composer.lock /var/www/html/
 
-# ⬇️⬇️⬇️ CORRECTION CRITIQUE - AJOUTER CES 2 LIGNES ⬇️⬇️⬇️
-# Configure Composer pour éviter les timeouts et utiliser les sources
-RUN composer config --global process-timeout 2000 && \
-    composer config --global repo.packagist composer https://packagist.org
+# ⬇️⬇️⬇️ CORRECTIONS CRITIQUES - OPTIMISATIONS COMPOSER ⬇️⬇️⬇️
+# Configure Composer pour éviter les timeouts et utiliser un mirror rapide
+RUN composer config -g repo.packagist composer https://mirrors.aliyun.com/composer/ && \
+    composer config -g process-timeout 3600 && \
+    composer config -g github-protocols https && \
+    composer config -g preferred-install dist && \
+    composer clear-cache
 
-# Install Composer dependencies
-RUN composer install --no-scripts --no-autoloader  # ⬅️ MODIFIÉ
+# Install Composer dependencies avec retry mechanism
+RUN composer install --no-scripts --no-autoloader --no-progress --no-interaction || \
+    (echo "⚠️ First attempt failed, retrying..." && composer install --no-scripts --no-autoloader --no-progress --no-interaction) || \
+    (echo "⚠️ Second attempt failed, retrying one more time..." && composer install --no-scripts --no-autoloader --no-progress --no-interaction)
 
 # Copy application code
 COPY . .
 
 # Install Composer dependencies (including dev dependencies) and run initial setup
-RUN composer update --no-scripts && php artisan opengrc:install --unattended
+RUN composer update --no-scripts --no-progress --no-interaction && \
+    php artisan opengrc:install --unattended
 
 ########################################
 # 2) Stage: Final - Production runtime
@@ -103,7 +109,7 @@ WORKDIR /var/www/html
 COPY --from=build /var/www/html .
 
 # Remove PHP development dependencies and clear Composer cache
-RUN composer install --no-dev --optimize-autoloader && \
+RUN composer install --no-dev --optimize-autoloader --no-progress --no-interaction && \
     composer clear-cache && \
     rm -rf /root/.composer/cache
 
