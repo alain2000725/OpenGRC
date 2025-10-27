@@ -90,8 +90,10 @@ RUN composer install --no-scripts --no-autoloader --no-progress --no-interaction
 # Copy application code
 COPY . .
 
-# Install Composer dependencies (including dev dependencies) and run initial setup
-RUN composer update --no-scripts --no-progress --no-interaction && \
+# ⬇️⬇️⬇️ CORRECTION CRITIQUE - REMPLACER composer update PAR composer install ⬇️⬇️⬇️
+# Fix git permissions and install dependencies WITHOUT updating (respect lock file)
+RUN git config --global --add safe.directory /var/www/html && \
+    composer install --no-scripts --no-progress --no-interaction && \
     php artisan opengrc:install --unattended
 
 ########################################
