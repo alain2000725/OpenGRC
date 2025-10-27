@@ -8,7 +8,8 @@ RUN apt-get clean && apt-get update && apt-get install -y \
     libzip-dev \
     libicu-dev \
     zip \
-    unzip 
+    unzip \
+    git  # ⬅️ AJOUTÉ - essentiel pour Composer
 
 RUN docker-php-ext-install pdo pdo_mysql bcmath intl zip gd
 
@@ -34,7 +35,7 @@ RUN ARCH= && dpkgArch="$(dpkg --print-architecture)" \
     i386) ARCH='x86';; \
     *) echo "unsupported architecture"; exit 1 ;; \
   esac \
-  # use pre-existing gpg directory, see https://github.com/nodejs/docker-node/pull/1895#issuecomment-1550389150
+  # use pre-existing gpg directory, see https://github.com/nodejs/docker-node/pull-1895#issuecomment-1550389150
   && export GNUPGHOME="$(mktemp -d)" \
   # gpg keys listed at https://github.com/nodejs/node#release-keys
   && set -ex \
@@ -73,14 +74,19 @@ WORKDIR /var/www/html
 
 COPY composer.json composer.lock /var/www/html/
 
+# ⬇️⬇️⬇️ CORRECTION CRITIQUE - AJOUTER CES 2 LIGNES ⬇️⬇️⬇️
+# Configure Composer pour éviter les timeouts et utiliser les sources
+RUN composer config --global process-timeout 2000 && \
+    composer config --global repo.packagist composer https://packagist.org
+
 # Install Composer dependencies
-RUN composer install --no-scripts
+RUN composer install --no-scripts --no-autoloader  # ⬅️ MODIFIÉ
 
 # Copy application code
 COPY . .
 
 # Install Composer dependencies (including dev dependencies) and run initial setup
-RUN composer update && php artisan opengrc:install --unattended
+RUN composer update --no-scripts && php artisan opengrc:install --unattended
 
 ########################################
 # 2) Stage: Final - Production runtime
